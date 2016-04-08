@@ -6,11 +6,6 @@ import tensorflow as tf
 from six.moves import cPickle as pickle
 from six.moves import range
 
-from __future__ import print_function
-import numpy as np
-import tensorflow as tf
-from six.moves import cPickle as pickle
-
 def dense_to_one_hot(labels_dense, num_classes=10):
   """Convert class labels from scalars to one-hot vectors."""
   num_labels = labels_dense.shape[0]
@@ -20,7 +15,7 @@ def dense_to_one_hot(labels_dense, num_classes=10):
   return labels_one_hot
 
 
-data = np.genfromtxt('data/query_db.out',filling_values=30)
+data = np.genfromtxt('data/gold-standard-crotonase.txt',filling_values=30)
 train_dataset = data[:,1::]
 train_labels = dense_to_one_hot(data[:,0],num_classes=8)
 
