@@ -8,16 +8,25 @@ from six.moves import range
 
 data = np.genfromtxt('data/gold-standard-crotonase.txt',filling_values=30).astype(np.float64)
 
-test_set = np.random.choice(data.shape[0],size=10,replace=False)
-train_mask = np.ones(data.shape[0], dtype=bool)
-train_mask[test_set] = False
-test_mask = np.invert(train_mask)
+shuffle = np.random.choice(data.shape[0],size=data.shape[0],replace=False)
+data = data[shuffle,:]
 
-train_dataset = data[train_mask,1::]
-train_labels = data[train_mask,0].astype(int) #dense_to_one_hot(data[10::,0],num_classes=8)
+train = 0.7
+valid = 0.2
+test = 0.1
 
-test_dataset = data[test_mask,1::]
-test_labels = data[test_mask,0].astype(int) #dense_to_one_hot(data[0:10,0],num_classes=8)
+train_ind = range(0                                     ,int(round((data.shape[0]*train))))
+valid_ind = range(int(round(data.shape[0]*train))       ,int(round(data.shape[0]*(1.0-test))))
+test_ind =  range(int(round(data.shape[0]*(1.0-test)))  ,data.shape[0])
+
+train_dataset = data[train_ind,1::]
+train_labels = data[train_ind,0].astype(int) #dense_to_one_hot(data[10::,0],num_classes=8)
+
+valid_dataset = data[valid_ind,1::]
+valid_labels = data[valid_ind,0].astype(int) #dense_to_one_hot(data[0:10,0],num_classes=8)
+
+test_dataset = data[test_ind,1::]
+test_labels = data[test_ind,0].astype(int) #dense_to_one_hot(data[0:10,0],num_classes=8)
 
 num_labels = 13
 
@@ -27,16 +36,19 @@ num_labels = 13
 #   return dataset, labels
 # train_dataset, train_labels = reformat(train_dataset, train_labels)
 print('Training set', train_dataset.shape, train_labels.shape)
+print('Validation set', valid_dataset.shape, valid_labels.shape)
 print('Test set', test_dataset.shape, test_labels.shape)
 
 
 
 
-def accuracy(predictions, labels):
-  print (predictions)
-  print (labels)
-  return (100.0 * np.sum(np.argmax(predictions, 1) == np.argmax(labels, 1))
-          / predictions.shape[0])
+def accuracy(predictions, labels, top=3):
+    rows = len(labels)
+    cols = predictions.shape[1]
+    tops = [x[(cols-top):cols] for x in np.argsort(predictions)]
+    correct = [labels[i] in tops[i] for i in range(rows)]
+    #print(correct)
+    return (100.0 * np.sum(correct) / predictions.shape[0])
 
 batch_size = 50
 input_layer = 4854
@@ -52,7 +64,7 @@ with graph.as_default():
   tf_train_dataset = tf.placeholder(tf.float64,
                                     shape=(batch_size, input_layer))
   tf_train_labels = tf.placeholder(tf.int64, shape=(batch_size))
-  #tf_valid_dataset = tf.constant(valid_dataset)
+  tf_valid_dataset = tf.constant(valid_dataset)
   tf_test_dataset = tf.constant(test_dataset)
 
   # Variables.
@@ -95,10 +107,10 @@ with graph.as_default():
 
     # Predictions for the training, validation, and test data.
   train_prediction = logits
-  #valid_prediction = tf.nn.softmax(model(tf_valid_dataset))
+  valid_prediction = model(tf_valid_dataset)
   test_prediction = model(tf_test_dataset)
 
-num_steps = 5001
+num_steps = 4001
 
 with tf.Session(graph=graph) as session:
   tf.initialize_all_variables().run()
@@ -118,8 +130,11 @@ with tf.Session(graph=graph) as session:
       [optimizer, loss, train_prediction], feed_dict=feed_dict)
     if (step % 200 == 0):
       print("Minibatch loss at step %d: %f" % (step, l))
-      #print("Minibatch accuracy: %.1f%%" % accuracy(predictions, batch_labels))
-      #print("Validation accuracy: %.1f%%" % accuracy(
-      #  valid_prediction.eval(), valid_labels))
-  #print("Test accuracy: %.1f%%" % accuracy(test_prediction.eval(), test_labels))
-  print(np.argmax(test_prediction.eval(),1), test_labels)
+      print("Minibatch accuracy: %.1f%%" % accuracy(predictions, batch_labels))
+      print("Validation accuracy: %.1f%%" % accuracy(
+        valid_prediction.eval(), valid_labels))
+  print("Test accuracy: %.1f%%" % accuracy(test_prediction.eval(), test_labels))
+  print("Test Prediction (3rd, 2nd, 1st):")
+  print(np.argsort(test_prediction.eval())[:,(num_labels-3):num_labels])
+  print("Test Truth:")
+  print(test_labels)
