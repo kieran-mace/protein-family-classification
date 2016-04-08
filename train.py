@@ -43,8 +43,8 @@ def accuracy(predictions, labels):
 
 batch_size = 10
 input_layer = 4854
-middle_layer1 = 1024
-middle_layer2 = 20
+middle_layer1 = 100
+middle_layer2 = 10
 middle_layer3 = 20
 output_layer = num_labels
 graph = tf.Graph()
@@ -76,7 +76,7 @@ with graph.as_default():
     x1 = tf.nn.relu(tf.matmul(x0, weights1) + biases1)
     x2 = tf.nn.relu(tf.matmul(x1, weights2) + biases2)
     x3 = tf.nn.relu(tf.matmul(x2, weights3) + biases3)
-    y = tf.matmul(x3, weights4) + biases4
+    y = tf.nn.softmax(tf.matmul(x3, weights4) + biases4)
     return y
   # Training computation.
   logits = model(tf_train_dataset)
