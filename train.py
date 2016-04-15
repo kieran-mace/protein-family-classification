@@ -1,19 +1,32 @@
-# These are all the modules we'll be using later. Make sure you can import them
-# before proceeding further.
+from __future__ import absolute_import
+from __future__ import division
 from __future__ import print_function
+
 import numpy as np
 import tensorflow as tf
-from six.moves import cPickle as pickle
 from six.moves import range
 
-data = np.genfromtxt('data/gold-standard-crotonase.txt',filling_values=30).astype(np.float64)
+# settings
+train = 0.85
+valid = 0.15
+test = 0.00
+
+dropout_prob = 0.99
+
+x_size = 4854
+y_size = 92
+
+batch_size = 200
+
+steps = 51
+# Import data
+
+data = np.genfromtxt('data/silver_standard_all_matrix_withNA.txt',filling_values=-30.0).astype(np.float32)
 
 shuffle = np.random.choice(data.shape[0],size=data.shape[0],replace=False)
 data = data[shuffle,:]
 
-train = 0.7
-valid = 0.2
-test = 0.1
+
 
 train_ind = range(0                                     ,int(round((data.shape[0]*train))))
 valid_ind = range(int(round(data.shape[0]*train))       ,int(round(data.shape[0]*(1.0-test))))
@@ -28,113 +41,119 @@ valid_labels = data[valid_ind,0].astype(int) #dense_to_one_hot(data[0:10,0],num_
 test_dataset = data[test_ind,1::]
 test_labels = data[test_ind,0].astype(int) #dense_to_one_hot(data[0:10,0],num_classes=8)
 
-num_labels = 13
-
-# def reformat(dataset, labels):
-#   dataset = dataset.astype(np.float32)
-#   labels = (np.arange(num_labels) == labels[:,None]).astype(np.float32)
-#   return dataset, labels
-# train_dataset, train_labels = reformat(train_dataset, train_labels)
 print('Training set', train_dataset.shape, train_labels.shape)
 print('Validation set', valid_dataset.shape, valid_labels.shape)
 print('Test set', test_dataset.shape, test_labels.shape)
 
+# We can't initialize these variables to 0 - the network will get stuck.
+def weight_variable(shape):
+  """Create a weight variable with appropriate initialization."""
+  initial = tf.truncated_normal(shape, stddev=0.1)
+  return tf.Variable(initial)
 
+def bias_variable(shape):
+  """Create a bias variable with appropriate initialization."""
+  initial = tf.constant(0.1, shape=shape)
+  return tf.Variable(initial)
 
+def variable_summaries(var, name):
+  """Attach a lot of summaries to a Tensor."""
+  with tf.name_scope('summaries'):
+    mean = tf.reduce_mean(var)
+    tf.scalar_summary('mean/' + name, mean)
+    with tf.name_scope('stddev'):
+      stddev = tf.sqrt(tf.reduce_sum(tf.square(var - mean)))
+    tf.scalar_summary('sttdev/' + name, stddev)
+    tf.scalar_summary('max/' + name, tf.reduce_max(var))
+    tf.scalar_summary('min/' + name, tf.reduce_min(var))
+    tf.histogram_summary(name, var)
 
-def accuracy(predictions, labels, top=3):
-    rows = len(labels)
-    cols = predictions.shape[1]
-    tops = [x[(cols-top):cols] for x in np.argsort(predictions)]
-    correct = [labels[i] in tops[i] for i in range(rows)]
-    #print(correct)
-    return (100.0 * np.sum(correct) / predictions.shape[0])
+def nn_layer(input_tensor, input_dim, output_dim, layer_name, act=tf.nn.relu):
+  """Reusable code for making a simple neural net layer.
 
-batch_size = 50
-input_layer = 4854
-middle_layer1 = 100
-middle_layer2 = 10
-middle_layer3 = 20
-output_layer = num_labels
+  It does a matrix multiply, bias add, and then uses relu to nonlinearize.
+  It also sets up name scoping so that the resultant graph is easy to read, and
+  adds a number of summary ops.
+  """
+  # Adding a name scope ensures logical grouping of the layers in the graph.
+  with tf.name_scope(layer_name):
+    # This Variable will hold the state of the weights for the layer
+    with tf.name_scope('weights'):
+      weights = weight_variable([input_dim, output_dim])
+      variable_summaries(weights, layer_name + '/weights')
+    with tf.name_scope('biases'):
+      biases = bias_variable([output_dim])
+      variable_summaries(biases, layer_name + '/biases')
+    with tf.name_scope('Wx_plus_b'):
+      preactivate = tf.matmul(input_tensor, weights) + biases
+      tf.histogram_summary(layer_name + '/pre_activations', preactivate)
+    activations = act(preactivate, 'activation')
+    tf.histogram_summary(layer_name + '/activations', activations)
+    return activations
+
+# Create a multilayer model.
 graph = tf.Graph()
 with graph.as_default():
+  # Input placehoolders
+  with tf.name_scope('input'):
+    x = tf.placeholder(tf.float32, [None, x_size], name='x-input')
+    y_ = tf.placeholder(tf.int64, [None], name='y-input')
+    keep_prob = tf.placeholder(tf.float32)
+    tf.scalar_summary('dropout_keep_probability', keep_prob)
 
-  # Input data. For the training data, we use a placeholder that will be fed
-  # at run time with a training minibatch.
-  tf_train_dataset = tf.placeholder(tf.float64,
-                                    shape=(batch_size, input_layer))
-  tf_train_labels = tf.placeholder(tf.int64, shape=(batch_size))
-  tf_valid_dataset = tf.constant(valid_dataset)
-  tf_test_dataset = tf.constant(test_dataset)
+  hidden1 = nn_layer(x, x_size, 500, 'layer1')
+  dropped = tf.nn.dropout(hidden1, keep_prob)
+  y = nn_layer(dropped, 500, y_size, 'layer2', act=tf.nn.relu)
 
-  # Variables.
-  weights1 = tf.Variable(
-    tf.truncated_normal([input_layer, middle_layer1],dtype=tf.float64))
-  biases1 = tf.Variable(tf.zeros([middle_layer1],dtype=tf.float64))
-  weights2 = tf.Variable(
-    tf.truncated_normal([middle_layer1, middle_layer2],dtype=tf.float64))
-  biases2 = tf.Variable(tf.zeros([middle_layer2],dtype=tf.float64))
-  weights3 = tf.Variable(
-    tf.truncated_normal([middle_layer2, middle_layer3],dtype=tf.float64))
-  biases3 = tf.Variable(tf.zeros([middle_layer3],dtype=tf.float64))
-  weights4 = tf.Variable(
-    tf.truncated_normal([middle_layer3, output_layer],dtype=tf.float64))
-  biases4 = tf.Variable(tf.zeros([output_layer],dtype=tf.float64))
-  # Model.
-  def model(x0):
-    x1 = tf.nn.relu(tf.matmul(x0, weights1) + biases1)
-    x2 = tf.nn.relu(tf.matmul(x1, weights2) + biases2)
-    x3 = tf.nn.relu(tf.matmul(x2, weights3) + biases3)
-    y = tf.nn.softmax(tf.matmul(x3, weights4) + biases4)
-    return y
-  # Training computation.
-  logits = model(tf_train_dataset)
-  losses = [tf.nn.l2_loss(w) for w in [weights1,weights2,weights3,weights4]]
-  loss = tf.reduce_mean(
-    tf.nn.sparse_softmax_cross_entropy_with_logits(logits, tf_train_labels)) + 0.2 * tf.add_n(losses)
 
-  # Optimizer.
-  class DoubleGDOptimizer(tf.train.GradientDescentOptimizer):
-      def _valid_dtypes(self):
-          return set([tf.float32, tf.float64])
+  with tf.name_scope('cross_entropy'):
+    diff = tf.nn.sparse_softmax_cross_entropy_with_logits(y,y_)
+    with tf.name_scope('total'):
+      cross_entropy = tf.reduce_mean(diff)
+    tf.scalar_summary('cross entropy', cross_entropy)
 
-  learning_rate = 0.5
-  optimizer = DoubleGDOptimizer(tf.constant(learning_rate, tf.float64)).minimize(loss)
-#   global_step = tf.Variable(0, trainable=False)  # count the number of steps taken.
-#   starter_learning_rate = 0.1
-#   learning_rate = tf.train.exponential_decay(0.5, global_step, 100000, 0.96, staircase=True)
-#   optimizer = tf.train.GradientDescentOptimizer(learning_rate).minimize(loss, global_step=global_step)
+  with tf.name_scope('train'):
+    train_step = tf.train.AdamOptimizer(
+        0.0001).minimize(cross_entropy)
 
-    # Predictions for the training, validation, and test data.
-  train_prediction = logits
-  valid_prediction = model(tf_valid_dataset)
-  test_prediction = model(tf_test_dataset)
+  with tf.name_scope('accuracy'):
+    with tf.name_scope('correct_prediction'):
+      correct_prediction = tf.equal(tf.argmax(y, 1), y_)
+      #correct_prediction = tf.nn.in_top_k(y, y_, 3)
+    with tf.name_scope('accuracy'):
+      accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+    tf.scalar_summary('accuracy', accuracy)
 
-num_steps = 4001
-
-with tf.Session(graph=graph) as session:
+with tf.Session(graph=graph) as sess:
+  # Merge all the summaries and write them out to /tmp/mnist_logs (by default)
+  merged = tf.merge_all_summaries()
+  train_writer = tf.train.SummaryWriter('./train', sess.graph)
+  test_writer = tf.train.SummaryWriter('./test', sess.graph)
   tf.initialize_all_variables().run()
-  print("Initialized")
-  for step in range(num_steps):
-    # Pick an offset within the training data, which has been randomized.
-    # Note: we could use better randomization across epochs.
-    offset = (step * batch_size) % (train_labels.shape[0] - batch_size)
-    # Generate a minibatch.
-    batch_data = train_dataset[offset:(offset + batch_size), :]
-    batch_labels = train_labels[offset:(offset + batch_size)]
-    # Prepare a dictionary telling the session where to feed the minibatch.
-    # The key of the dictionary is the placeholder node of the graph to be fed,
-    # and the value is the numpy array to feed to it.
-    feed_dict = {tf_train_dataset : batch_data, tf_train_labels : batch_labels}
-    _, l, predictions = session.run(
-      [optimizer, loss, train_prediction], feed_dict=feed_dict)
-    if (step % 200 == 0):
-      print("Minibatch loss at step %d: %f" % (step, l))
-      print("Minibatch accuracy: %.1f%%" % accuracy(predictions, batch_labels))
-      print("Validation accuracy: %.1f%%" % accuracy(
-        valid_prediction.eval(), valid_labels))
-  print("Test accuracy: %.1f%%" % accuracy(test_prediction.eval(), test_labels))
-  print("Test Prediction (3rd, 2nd, 1st):")
-  print(np.argsort(test_prediction.eval())[:,(num_labels-3):num_labels])
-  print("Test Truth:")
-  print(test_labels)
+
+  # Train the model, and also write summaries.
+  # Every 10th step, measure test-set accuracy, and write test summaries
+  # All other steps, run train_step on training data, & add training summaries
+
+  def feed_dict(train):
+    """Make a TensorFlow feed_dict: maps data onto Tensor placeholders."""
+    if train:
+      ind = np.random.choice(train_dataset.shape[0],
+                             size=train_dataset.shape[0],
+                             replace=False)
+      xs, ys = train_dataset[ind,:], train_labels[ind]
+      k = dropout_prob
+    else:
+      xs, ys = valid_dataset, valid_labels
+      k = 1.0
+    return {x: xs, y_: ys, keep_prob: k}
+
+  for i in range(steps):
+    if i % 50 == 0:  # Record summaries and test-set accuracy
+      summary, acc, ce = sess.run([merged, accuracy, cross_entropy], feed_dict=feed_dict(False))
+      test_writer.add_summary(summary, i)
+      print('Accuracy at step %s: %s' % (i, acc))
+      print('Cross Entropy at step %s: %s' % (i, ce))
+    else: # Record train set summarieis, and train
+      summary, _ = sess.run([merged, train_step], feed_dict=feed_dict(True))
+      train_writer.add_summary(summary, i)
