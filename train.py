@@ -11,14 +11,14 @@ train = 0.85
 valid = 0.15
 test = 0.00
 
-dropout_prob = 0.99
+dropout_prob = 0.80
 
 x_size = 4854
 y_size = 92
 
-batch_size = 200
+batch_size = 400
 
-steps = 51
+steps = 1501
 # Import data
 
 data = np.genfromtxt('data/silver_standard_all_matrix_withNA.txt',filling_values=-30.0).astype(np.float32)
@@ -101,7 +101,7 @@ with graph.as_default():
     keep_prob = tf.placeholder(tf.float32)
     tf.scalar_summary('dropout_keep_probability', keep_prob)
 
-  hidden1 = nn_layer(x, x_size, 500, 'layer1')
+  hidden1 = nn_layer(x, x_size, 500, 'layer1', act=tf.nn.tanh)
   dropped = tf.nn.dropout(hidden1, keep_prob)
   y = nn_layer(dropped, 500, y_size, 'layer2', act=tf.nn.relu)
 
@@ -116,6 +116,14 @@ with graph.as_default():
     train_step = tf.train.AdamOptimizer(
         0.0001).minimize(cross_entropy)
 
+# def accuracy(predictions, labels, top=3):
+#     rows = len(labels)
+#     cols = predictions.shape[1]
+#     tops = [x[(cols-top):cols] for x in np.argsort(predictions)]
+#     correct = [labels[i] in tops[i] for i in range(rows)]
+#     #print(correct)
+#     return (100.0 * np.sum(correct) / predictions.shape[0])
+
   with tf.name_scope('accuracy'):
     with tf.name_scope('correct_prediction'):
       correct_prediction = tf.equal(tf.argmax(y, 1), y_)
@@ -127,8 +135,8 @@ with graph.as_default():
 with tf.Session(graph=graph) as sess:
   # Merge all the summaries and write them out to /tmp/mnist_logs (by default)
   merged = tf.merge_all_summaries()
-  train_writer = tf.train.SummaryWriter('./train', sess.graph)
-  test_writer = tf.train.SummaryWriter('./test', sess.graph)
+  train_writer = tf.train.SummaryWriter('./logs/train', sess.graph)
+  test_writer = tf.train.SummaryWriter('./logs/test', sess.graph)
   tf.initialize_all_variables().run()
 
   # Train the model, and also write summaries.
